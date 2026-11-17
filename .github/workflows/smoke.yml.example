@@ -1,0 +1,49 @@
+name: Smoke test
+
+# Copy to .github/workflows/smoke.yml.
+#
+# Runs a read-only smoke test (GET requests only) after each staging and production deploy.
+# Your host must report each deploy to GitHub as a deployment. This workflow reads the
+# environment names, URLs and checks from .claude/workflow.json (deploy.*.githubEnvironment, smoke.*).
+# It posts a commit status, smoke/<env>, on the deployed commit. CI on the release PR waits
+# for smoke/staging (job staging-smoke).
+# deployment_status runs the copy of this file in the deployed commit.
+on:
+  deployment_status:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  smoke:
+    if: github.event.deployment_status.state == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      SHA: ${{ github.event.deployment.sha }}
+      DEPLOY_ENV: ${{ github.event.deployment.environment }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.deployment.sha }}
+      - name: Which environment is this?
+        id: which
+        run: bash scripts/workflow/smoke-env.sh "$DEPLOY_ENV" "$SHA" >> "$GITHUB_OUTPUT"
+      - name: Mark the smoke test as running
+        if: steps.which.outputs.env != ''
+        run: |
+          gh api "repos/$REPO/statuses/$SHA" -f state=pending -f context="smoke/${{ steps.which.outputs.env }}" \
+            -f description="Smoke test running" -f target_url="$GITHUB_SERVER_URL/$REPO/actions/runs/$GITHUB_RUN_ID"
+      - name: Smoke test (GET only)
+        id: smoke
+        if: steps.which.outputs.env != ''
+        run: bash scripts/workflow/smoke.sh "${{ steps.which.outputs.env }}"
+      - name: Post the result
+        if: always() && steps.which.outputs.env != ''
+        run: |
+          state=failure; [ "${{ steps.smoke.outcome }}" = success ] && state=success
+          gh api "repos/$REPO/statuses/$SHA" -f state=$state -f context="smoke/${{ steps.which.outputs.env }}" \
+            -f description="Smoke test $state" -f target_url="$GITHUB_SERVER_URL/$REPO/actions/runs/$GITHUB_RUN_ID"

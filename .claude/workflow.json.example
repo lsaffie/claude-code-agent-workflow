@@ -1,0 +1,65 @@
+{
+  "$comment": "Repo adapter. Copy to .claude/workflow.json and fill in your values. Everything specific to your repo lives here; the hooks, scripts and CI read it. {file} and {files} are replaced by the scripts. A null command means another command covers it, or the repo has none; notes says why. A missing command key is an error.",
+  "repo": "owner/repo",
+  "branches": {
+    "integration": "staging",
+    "production": "main"
+  },
+  "commands": {
+    "install": "npm ci",
+    "lint": "npm run lint",
+    "typecheck": "npm run typecheck",
+    "unitTests": "npm test",
+    "coverage": null,
+    "relatedTests": "npx vitest related --run --passWithNoTests {files}",
+    "e2e": "npx playwright test",
+    "build": "npm run build",
+    "formatFile": "npx prettier --write --log-level warn {file}",
+    "lintFixFile": "npx eslint --fix --no-warn-ignored {file}",
+    "lintCheckFile": "npx eslint --no-warn-ignored --quiet {file}",
+    "lintShowFile": "npx eslint --no-warn-ignored {file}"
+  },
+  "notes": {
+    "coverage": "No coverage gate yet. The stop hook and CI run unitTests instead. Add a command that fails when coverage drops below a stored baseline."
+  },
+  "files": {
+    "lintExtensions": ["ts", "tsx", "js", "jsx", "mjs", "cjs"],
+    "formatExtensions": ["ts", "tsx", "js", "jsx", "mjs", "cjs", "json", "css", "md"],
+    "formatNewFilesOnly": false,
+    "relatedTestsPattern": "^(src|tests?)/.*\\.(ts|tsx|js|jsx)$",
+    "testFilePattern": "\\.(test|spec)\\.(ts|tsx|js|jsx)$",
+    "ignoreEdits": "^(node_modules|dist|build|coverage|playwright-report|test-results)/"
+  },
+  "deploy": {
+    "blockedCommands": ["vercel", "netlify"],
+    "staging": { "method": "git", "host": "Your host", "githubEnvironment": "Preview", "command": null },
+    "production": { "method": "git", "host": "Your host", "githubEnvironment": "Production", "command": null }
+  },
+  "smoke": {
+    "staging": {
+      "url": "https://staging.example.com",
+      "checks": [
+        { "path": "/", "status": 200 },
+        { "path": "/health", "status": 200 }
+      ]
+    },
+    "production": {
+      "url": "https://app.example.com",
+      "checks": [
+        { "path": "/", "status": 200 },
+        { "path": "/health", "status": 200 }
+      ]
+    }
+  },
+  "rollback": {
+    "method": "host",
+    "command": null,
+    "description": "The owner rolls back to the last good release on the host, then opens a revert PR into the integration branch.",
+    "guide": "docs/release.md"
+  },
+  "paths": {
+    "explainers": "docs/changes",
+    "explainerTemplate": "docs/changes/TEMPLATE.md",
+    "nonCode": "^docs/|\\.md$"
+  }
+}

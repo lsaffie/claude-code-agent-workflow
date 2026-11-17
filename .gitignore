@@ -1,0 +1,4 @@
+# Your filled-in copies stay out of this template repo.
+.claude/workflow.json
+.claude/settings.json
+.claude/settings.local.json

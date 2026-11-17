@@ -1,0 +1,48 @@
+# <Project name>
+
+<!-- Copy to CLAUDE.md at your repo root. Keep it under about 100 lines.
+     Hold only the rules the agent cannot infer from the code. -->
+
+<One or two sentences: what the product is and who uses it.>
+The owner decides. The agent writes most of the code.
+
+## Workflow rules
+
+- Work on a feature branch. Open a PR into `staging` (the integration branch). Never push to `staging` or `main` directly.
+- CI checks every PR. When `AUTO_MERGE_ENABLED` is on, CI squash-merges a green PR into `staging`. The host deploys it.
+- A bot keeps one release PR from `staging` into `main`. The owner reads it, tries staging, and merges it with a merge commit. The agent never merges it.
+- Test first: write a failing test before any implementation, run it, see it fail, then make it pass. A bug fix starts with a test that shows the bug.
+- New behaviour needs tests in the same PR.
+- Every PR explains itself in one short paragraph: what changed and why. Put it in the PR Summary (`.github/pull_request_template.md`) and in a new explainer in `docs/changes/` (copy `docs/changes/TEMPLATE.md`).
+- Make the smallest change that solves the whole task. Do not add features, files or abstractions nobody asked for.
+- State each choice nobody specified, in one line, when you make it.
+- Stop and ask the owner before any hard-to-undo decision: data migrations, deletes, publishing, anything on production, secrets, public APIs. Say "this is a one-way door".
+- Schema changes use expand then contract. Release 1 adds the new shape and code that works with both. Release 2 removes the old shape, after production runs release 1.
+- At the end of a task, report the commands you ran and their real output.
+
+## Checks
+
+The commands live in `.claude/workflow.json`. Run one with `bash scripts/workflow/run.sh <name>`.
+
+| Name | What it checks |
+|---|---|
+| `lint` | <your linter> |
+| `typecheck` | <your type checker> |
+| `unitTests` | <your unit test runner> |
+| `e2e` | <your end-to-end tests and what they need, for example a local Postgres with postgres/postgres> |
+| `build` | <your build> |
+
+Hooks run these for you: `post-edit.sh` after each edit, `stop.sh` before you stop.
+`guard.sh` blocks actions that only the owner may take. Do not try to get around it: ask.
+
+## Code rules
+
+<!-- Only rules the agent cannot infer from the code. One line each. Examples:
+- Get the session with <helper>. Do not read auth state another way.
+- Money is stored in cents. Show it with <helper>.
+- Send email only through <module>, after the database write. -->
+
+## Environments and secrets
+
+- Never read `.env` files or other secret files. Variable names are in `.env.example`.
+- Never run commands against production. The owner does that.

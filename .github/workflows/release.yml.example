@@ -1,0 +1,58 @@
+name: Release
+
+# Copy to .github/workflows/release.yml. Replace "main" if your production branch differs.
+#
+# Runs on each push to the production branch, that is, when a person merges the release PR.
+#   merge-method: the new head must be a merge commit. If not, it fails and opens an issue.
+#   tag: creates the tag release-YYYY-MM-DD.N and a GitHub Release with the release PR body.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  merge-method:
+    name: Release PR merged with a merge commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Check the parents of the new head
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          if ! out=$(bash scripts/workflow/check-merge-commit.sh "$SHA" 2>&1); then
+            echo "::error::$out"
+            gh issue create -R "$REPO" --title "Production branch got a commit that is not a merge commit" --body "$out
+
+          The release PR must merge with **Create a merge commit**.
+          Run: $GITHUB_SERVER_URL/$REPO/actions/runs/$GITHUB_RUN_ID"
+            exit 1
+          fi
+          echo "$out"
+
+  tag:
+    name: Tag and GitHub Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Create the release tag and the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: bash scripts/workflow/release-tag.sh "${{ github.sha }}"

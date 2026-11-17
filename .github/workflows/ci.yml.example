@@ -1,0 +1,352 @@
+name: CI
+
+# Copy to .github/workflows/ci.yml. Replace "staging" and "main" if your branch names differ:
+# GitHub cannot read branch names from .claude/workflow.json in "on:" or "if:".
+#
+# Runs on every PR into the integration branch (staging) or the production branch (main).
+#   checks, build-e2e, docs-check: the full test suite, through scripts/workflow/run.sh
+#   claude-review: a second AI review of the diff against the linked spec or ticket issue
+#   autofix: when a check or the review fails, Claude pushes a fix. At most 3 attempts per PR
+#   merge-to-staging: optional. Squash-merges a green PR into staging when the repository
+#     variable AUTO_MERGE_ENABLED is "true". It never merges a PR into main
+#   staging-smoke: on the release PR only, waits for the staging smoke test (smoke.yml)
+#
+# Secrets (names only): ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN.
+on:
+  pull_request:
+    branches: [staging, main]
+    # No labeled/unlabeled: the review job sets a label, and a new run would cancel this one.
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+  # Sample values for a throwaway CI database. No real secret is used in CI.
+  DATABASE_URL: postgresql://postgres:postgres@localhost:5432/app_test
+
+jobs:
+  checks:
+    name: Lint, types, unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      # Commands come from .claude/workflow.json (commands.<name>).
+      - name: Install
+        run: bash scripts/workflow/run.sh install
+      - name: Lint
+        run: bash scripts/workflow/run.sh lint
+      - name: Type check
+        run: bash scripts/workflow/run.sh typecheck
+      - name: Unit tests (with the coverage gate when the adapter has one)
+        run: |
+          if [ "$(jq -r '.commands.coverage // empty' .claude/workflow.json)" ]; then
+            bash scripts/workflow/run.sh coverage
+          else
+            bash scripts/workflow/run.sh unitTests
+          fi
+
+  build-e2e:
+    name: Build and end-to-end tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install
+        run: bash scripts/workflow/run.sh install
+      - name: Build
+        run: bash scripts/workflow/run.sh build
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: End-to-end tests
+        run: bash scripts/workflow/run.sh e2e
+      - uses: actions/upload-artifact@v5
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  docs-check:
+    name: Change explainer and guard tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Code changes need an explainer (paragraph, diagram, 3 questions)
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: bash scripts/workflow/check-explainer.sh "$BASE" "$HEAD"
+      - name: Guard hook tests
+        run: bash scripts/workflow/guard.test.sh
+
+  # The release PR (into main) needs a green staging smoke test on its head commit.
+  # smoke.yml posts it after the staging deploy. This job waits up to 20 minutes.
+  staging-smoke:
+    name: Staging smoke test passed
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      statuses: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Wait for smoke/staging on the head commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          prod=$(jq -r .branches.production .claude/workflow.json)
+          if [ "$BASE" != "$prod" ]; then echo "Not a release PR. Nothing to check."; exit 0; fi
+          for i in $(seq 1 40); do
+            state=$(gh api "repos/$REPO/commits/$SHA/status" --jq '[.statuses[] | select(.context == "smoke/staging")][0].state // "missing"')
+            echo "smoke/staging on $SHA: $state"
+            case "$state" in
+              success) exit 0 ;;
+              failure | error) echo "::error::The staging smoke test failed for $SHA. Do not merge."; exit 1 ;;
+            esac
+            sleep 30
+          done
+          echo "::error::No smoke/staging result for $SHA after 20 minutes."
+          exit 1
+
+  # A second reader. It checks the diff against the spec or ticket issue that the PR links.
+  # It posts one comment and fails this job when it finds a gap.
+  claude-review:
+    name: Claude review
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: >-
+            --max-turns 30
+            --allowedTools "Read,Glob,Grep,Bash(gh pr view *),Bash(gh pr diff *),Bash(gh issue view *),Bash(gh pr comment *),Bash(gh pr edit *),Bash(git diff *),Bash(git log *)"
+          prompt: |
+            Review PR #${{ github.event.pull_request.number }} in ${{ github.repository }}.
+            The PR goes into `${{ github.event.pull_request.base.ref }}`.
+
+            1. Read the PR body with `gh pr view ${{ github.event.pull_request.number }}`.
+               It should link a spec or ticket issue (for example "Closes #12"). Read each linked issue with `gh issue view`.
+               If it links none, report that as a requirements gap.
+            2. Read the diff with `gh pr diff ${{ github.event.pull_request.number }}`. Read the changed files where you need context.
+            3. Read CLAUDE.md. Its rules apply.
+
+            Report only these gaps:
+            - requirements: the change does not do what the linked issue asks, or does more than it asks
+            - correctness: the code does the wrong thing, or breaks an existing caller
+            - security: auth, access to another user's data, secrets, injection, unsafe input
+            - missing tests: new behaviour without a test, or a bug fix without a test that shows the bug
+            Do not report style, naming, formatting or preferences. Do not report a gap you are not sure of.
+
+            Then do both steps:
+            A. Post one PR comment with `gh pr comment`. Its first line must be exactly
+               `<!-- claude-review sha=${{ github.event.pull_request.head.sha }} -->`.
+               Use short sentences. For each gap give the file and line, the problem, and a concrete fix.
+               If there are no gaps, write "No gaps found." and one line on what you checked.
+            B. If you found at least one gap, run
+               `gh pr edit ${{ github.event.pull_request.number }} --add-label claude-review-blocking`.
+               If you found none, run
+               `gh pr edit ${{ github.event.pull_request.number }} --remove-label claude-review-blocking`.
+      - name: Fail when the review found gaps
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          labels=$(gh pr view "$PR" --repo "$REPO" --json labels --jq '[.labels[].name] | join(",")')
+          case ",$labels," in
+            *,claude-review-blocking,*) echo "::error::Claude review found gaps. See the PR comment."; exit 1 ;;
+          esac
+          echo "No blocking gaps."
+
+  # When a check or the review fails on a PR into staging, Claude reads the failure, pushes a
+  # fix to the PR branch, and the push starts CI again. At most 3 attempts per PR. Then it
+  # posts a comment for a person and stops.
+  # Attempts are counted by PR comments that start with <!-- claude-autofix-attempt -->.
+  autofix:
+    name: Claude autofix
+    needs: [checks, build-e2e, docs-check, claude-review]
+    if: >-
+      failure() &&
+      github.event.pull_request.base.ref == 'staging' &&
+      github.event.pull_request.head.ref != 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: read
+      id-token: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      MAX_ATTEMPTS: 3
+    steps:
+      - name: Count attempts
+        id: attempts
+        run: |
+          # --paginate prints one array per page; jq -s 'add' joins them.
+          comments=$(gh api "repos/$REPO/issues/$PR/comments" --paginate --jq '[.[].body]' | jq -s 'add // []')
+          done_count=$(echo "$comments" | jq '[.[] | select(startswith("<!-- claude-autofix-attempt"))] | length')
+          stopped=$(echo "$comments" | jq '[.[] | select(startswith("<!-- claude-autofix-stopped"))] | length')
+          echo "attempt=$((done_count + 1))" >> "$GITHUB_OUTPUT"
+          echo "Earlier attempts: $done_count. Stop notices: $stopped."
+          if [ "$done_count" -ge "$MAX_ATTEMPTS" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            if [ "$stopped" -eq 0 ]; then
+              gh pr comment "$PR" --repo "$REPO" --body "<!-- claude-autofix-stopped -->
+          Claude autofix stopped after $MAX_ATTEMPTS attempts. CI still fails: $GITHUB_SERVER_URL/$REPO/actions/runs/$GITHUB_RUN_ID
+          A person must look at this PR. Delete the autofix comments to allow $MAX_ATTEMPTS more attempts."
+            fi
+          fi
+
+      - name: Save the failed job logs and the review
+        if: steps.attempts.outputs.skip != 'true'
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          out="$RUNNER_TEMP/ci-failure.log"
+          for id in $(gh api "repos/$REPO/actions/runs/$GITHUB_RUN_ID/jobs" --jq '.jobs[] | select(.conclusion == "failure") | .id'); do
+            echo "===== job $id =====" >> "$out"
+            gh api "repos/$REPO/actions/jobs/$id/logs" | tail -300 >> "$out" || true
+          done
+          echo "===== Claude review for $HEAD_SHA =====" >> "$out"
+          gh api "repos/$REPO/issues/$PR/comments" --paginate --jq '.[].body' |
+            awk -v m="<!-- claude-review sha=$HEAD_SHA -->" 'index($0, m) == 1 { s = 1 } s' >> "$out" || true
+          wc -l "$out"
+
+      - name: Record this attempt
+        if: steps.attempts.outputs.skip != 'true'
+        run: |
+          gh pr comment "$PR" --repo "$REPO" --body "<!-- claude-autofix-attempt ${{ steps.attempts.outputs.attempt }} -->
+          Claude autofix attempt ${{ steps.attempts.outputs.attempt }} of $MAX_ATTEMPTS for run $GITHUB_SERVER_URL/$REPO/actions/runs/$GITHUB_RUN_ID."
+
+      - uses: actions/checkout@v6
+        if: steps.attempts.outputs.skip != 'true'
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        if: steps.attempts.outputs.skip != 'true'
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - if: steps.attempts.outputs.skip != 'true'
+        run: bash scripts/workflow/run.sh install
+
+      - uses: anthropics/claude-code-action@v1
+        if: steps.attempts.outputs.skip != 'true'
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: >-
+            --max-turns 60
+            --allowedTools "Read,Glob,Grep,Edit,Write,Bash(npm *),Bash(npx *),Bash(node *),Bash(bash scripts/workflow/*),Bash(git status *),Bash(git diff *),Bash(git log *),Bash(git add *),Bash(git commit *),Bash(git push origin HEAD:${{ github.event.pull_request.head.ref }}),Bash(gh pr view *),Bash(gh issue view *),Bash(gh pr comment *)"
+          prompt: |
+            CI failed on PR #${{ github.event.pull_request.number }} (branch `${{ github.event.pull_request.head.ref }}`, into `staging`).
+            This is autofix attempt ${{ steps.attempts.outputs.attempt }} of 3.
+            The failed job logs and the latest Claude review are in `${{ runner.temp }}/ci-failure.log`.
+
+            1. Read CLAUDE.md. Its rules apply.
+            2. Read the log. Find the root cause of each failure and each review gap.
+               For a requirements gap, read the linked issue with `gh issue view`.
+            3. Fix the cause. Do not weaken, skip or delete a test to make it pass.
+               If a test is right and the code is wrong, fix the code.
+               If the failure is the change explainer, write or fix one in `paths.explainers` from `paths.explainerTemplate`, based on the diff.
+            4. Run the check that failed and confirm it passes. The commands are in
+               `.claude/workflow.json` under `commands`. Run one with `bash scripts/workflow/run.sh <name>`:
+               `lint`, `typecheck`, `unitTests`, `build`. The explainer check is
+               `bash scripts/workflow/check-explainer.sh origin/${{ github.event.pull_request.base.ref }} HEAD`.
+               The end-to-end job may need services that are not here. If only it failed, fix it from the log.
+            5. Commit with a message that starts with "Autofix:" and names the failure.
+            6. Post one PR comment with `gh pr comment ${{ github.event.pull_request.number }}`: the cause, the fix, and the real output of the check you ran.
+            7. Last step: push with `git push origin HEAD:${{ github.event.pull_request.head.ref }}`. Never push to any other branch.
+            If you cannot find a safe fix, do not push. Post a comment that explains what you found and what a person must decide.
+
+  # Optional. Set the repository variable AUTO_MERGE_ENABLED to "true" to turn it on.
+  # It merges only PRs into staging. The release PR into main is always merged by a person.
+  merge-to-staging:
+    name: Merge into staging
+    needs: [checks, build-e2e, docs-check, claude-review]
+    if: >-
+      github.event.pull_request.base.ref == 'staging' &&
+      github.event.pull_request.draft == false &&
+      vars.AUTO_MERGE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Squash-merge when no blocking label is set
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Read labels now: the review job may have changed them after this run started.
+          labels=$(gh pr view "$PR" --repo "$REPO" --json labels --jq '[.labels[].name] | join(",")')
+          echo "Labels: ${labels:-none}"
+          case ",$labels," in
+            *,no-auto-merge,*) echo "Label no-auto-merge is set. Not merging."; exit 0 ;;
+            *,claude-review-blocking,*) echo "::error::Claude review found gaps. Not merging."; exit 1 ;;
+          esac
+          # The review action reports success when it skips itself. So merge only if a review
+          # comment exists for this exact commit.
+          marker="<!-- claude-review sha=$HEAD_SHA -->"
+          reviewed=$(gh api "repos/$REPO/issues/$PR/comments" --paginate --jq '.[].body' | grep -cF "$marker" || true)
+          if [ "$reviewed" -eq 0 ]; then
+            echo "::error::No Claude review comment for $HEAD_SHA. The review was skipped or posted nothing. Not merging."
+            exit 1
+          fi
+          # --match-head-commit: merge only the commit these checks ran on.
+          gh pr merge "$PR" --repo "$REPO" --squash --delete-branch --match-head-commit "$HEAD_SHA"

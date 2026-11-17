@@ -1,0 +1,48 @@
+name: Release PR
+
+# Copy to .github/workflows/release-pr.yml. Replace "staging" if your integration branch differs.
+#
+# Keeps one open PR from staging into main: the release PR. Its body lists the merged
+# changes and holds the full text of each new change explainer.
+# A person reads it, tries staging, approves and merges it with a merge commit.
+# CI never merges it, and the guard hook blocks the agent from merging it.
+#
+# Secret (name only): RELEASE_PR_TOKEN, a fine-grained token with contents: read and
+# pull-requests: write on this repo. A PR opened with it starts CI; one opened with
+# GITHUB_TOKEN would not.
+#
+# Why workflow_run: CI merges into staging with GITHUB_TOKEN, and a push made with that
+# token starts no workflow, so "on: push" alone never fires after an auto-merge.
+# workflow_run fires only for this file as it is on the default branch.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+concurrency:
+  group: release-pr
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release-pr:
+    name: Open or update the release PR
+    # Only a PR run can have moved staging. The script does nothing when staging did not move.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: staging
+          fetch-depth: 0
+      - name: Open or update the release PR
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: bash scripts/workflow/release-pr.sh

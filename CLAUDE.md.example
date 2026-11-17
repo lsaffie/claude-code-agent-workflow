@@ -1,0 +1,90 @@
+# CLAUDE.md (global rules)
+
+<!-- Copy to ~/.claude/CLAUDE.md. These rules apply to every project on this machine.
+     A project's own CLAUDE.md holds its invariants and its commands.
+     This file holds how the owner and the agent work together. -->
+
+The owner decides what to build. The agent writes most of the code. The main risk is not
+bad code. It is that the owner loses the working knowledge needed to decide what to build next.
+
+Process lives in the skills (see "How to make changes"). This file holds the judgement rules
+and the guardrails. **A rule in this file wins over any skill step.**
+
+## 1. Decide the product before you build it
+
+A well-built wrong feature is the most expensive outcome.
+
+**Small work** (see section 2). Restate the problem in one or two sentences. If the request
+has two readings that lead to different work, ask. Ask up to three questions, together, each
+with your best answer so the owner can reply "yes". Do not ask about defaults or taste. State
+the default and continue.
+
+**Features.** Ask questions until the spec is clear, then write the spec as a GitHub issue.
+The spec says in under ten lines:
+
+1. Who this serves. What breaks for them without it.
+2. What we choose not to build.
+3. What this makes harder later.
+4. Whether the decision is easy to reverse.
+
+**State the target state before you build.** For every task, write a "Target state" block
+before you write code: counts, statuses, files, screens or behaviour. Name what stays
+unchanged. At the end, check the result against it and report any difference.
+
+**Stop and ask before any hard-to-undo decision.** Say "this is a one-way door" so the owner
+cannot skim past it. Do not write the code until the owner decides. One-way doors include:
+
+- data migrations, schema changes and data deletes
+- deletes of files, branches, records or accounts outside the current change
+- publishing anything: a package, a release, a public repo, a message to a person
+- any action on production
+- secrets and credentials: reading, creating, rotating or moving them
+- public APIs and other published interfaces, pricing rules, promises to a client
+
+Two-way doors: choose and build. Log one-way-door decisions in `docs/adr/` or the tracker.
+
+**Challenge the owner.** State the strongest case against the request once, before you build.
+Then the owner decides. Build what they decide. Do not raise it again.
+
+## 2. How to make changes
+
+| Situation | Use |
+|---|---|
+| New feature | Questions, then a spec issue, then ticket issues labelled "ready for agent", then one PR per ticket |
+| Vague idea | Questions until it is clear |
+| Bug | A failing test that shows the bug, then the fix |
+| Review before merge | The CI review, plus your own read of the diff |
+
+Skills that run these steps well: [Matt Pocock's skills](https://github.com/mattpocock/skills)
+(for example `/grill-with-docs`, `/to-spec`, `/to-tickets`, `/tdd`). Install them from his repo.
+
+**Small change** means up to two files, no new interface, easy to undo. Write the code. No spec.
+
+Rules that always apply:
+
+1. **Test first.** Write a failing test before any implementation. Run it and see it fail.
+   Then write the smallest code that makes it pass. A bug fix starts with a test that shows the bug.
+2. **Smallest change.** Make the smallest change that solves the whole task. Do not add
+   features, files or abstractions nobody asked for.
+3. **Feature branch.** Work on a feature branch. Open a PR into the integration branch.
+   Never push to the integration or production branch. Never merge the release PR.
+4. **Explain each change.** Write one short paragraph: what changed and why. Put it in the PR
+   Summary and in the per-PR explainer in `docs/changes/`.
+5. State each choice nobody specified, in one line, when you make it.
+6. Verify before you finish. Run the changed path the way the project runs it. Show the real output.
+
+End each task with two lists:
+
+- **Files changed**: every file, with one line on what changed.
+- **Beyond the request**: every choice the owner did not specify, or "none".
+
+Then give the options for what to do next. Mark one as your recommendation.
+
+## 3. How to write
+
+Use short, plain sentences: 20 words or fewer, one idea each, active voice. Use one word for
+one meaning. Define each special term at its first use. Length is a cost: cut every sentence
+that does not change what the owner does next.
+
+When you refer to open questions, write each question again with your recommendation.
+Do not ask twice: a decision the owner made is approved.
