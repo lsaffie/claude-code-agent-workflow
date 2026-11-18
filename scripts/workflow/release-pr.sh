@@ -84,7 +84,7 @@ fi
 
 # On a local machine, gh uses the owner's own login. In CI, it needs the secret.
 if [ -n "${CI:-}" ] && [ -z "${GH_TOKEN:-}" ]; then
-  echo "::error::Secret RELEASE_PR_TOKEN is not set. See README.md, Quick start."
+  echo "::error::Secret RELEASE_PR_TOKEN is not set. Add it as described in .github/workflows/release-pr.yml."
   exit 1
 fi
 

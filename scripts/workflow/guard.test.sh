@@ -70,6 +70,10 @@ cases=(
   "2|cd .. && rm -rf repo-copy"
   "2|cd /tmp && rm -rf build"
   "2|find . -name x | xargs rm -rf"
+  # Deploys: a person runs the deploy script
+  "2|bash scripts/workflow/deploy.sh production"
+  "2|./scripts/workflow/deploy.sh staging"
+  "0|bash scripts/workflow/deploy-preflight.sh production"
   # Secrets
   "2|cat .env"
   "2|cat .env.local"

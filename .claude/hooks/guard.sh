@@ -12,7 +12,8 @@
 #   - rm -r outside the repo, of the repo itself, of .git, or of a path the hook cannot read
 #   - commands that name .env files (not .env.example, not guard.allowEnvCommands) or
 #     credential folders; printenv; bare env
-#   - host deploy CLIs (deploy.blockedCommands) and the deploy command (deploy.<env>.command)
+#   - host deploy CLIs (deploy.blockedCommands), the deploy command (deploy.<env>.command)
+#     and scripts/workflow/deploy.sh
 #
 # Exit 2 blocks the call and sends the reason to Claude. Exit 0 lets the deny rules decide.
 # Limits: it reads words split on spaces. Text in quotes is data, so a quoted refspec is
@@ -323,6 +324,8 @@ while IFS= read -r seg; do
       block "Deploys use the deploy method in .claude/workflow.json, not a CLI by hand."
     fi
   done <<<"$blocked_cmds"
+  # deploy.<env>.command, and scripts/workflow/deploy.sh for repos that deploy by script.
+  [[ "$seg" == *scripts/workflow/deploy.sh* ]] && block "A person runs the deploy script, never Claude."
   while IFS= read -r d; do
     [ -n "$d" ] && [[ "$seg" == *"$d"* ]] && block "A person runs the deploy command, never Claude."
   done <<<"$deploy_cmds"
