@@ -31,7 +31,7 @@ Hooks and scripts need `bash` (3.2 or later), `git`, `jq`, `curl` and `gh`.
 4. Copy `.claude/settings.json.example` to `.claude/settings.json`. Change `main` and `staging` in the deny rules if your branches differ. Add the hosts your tools need.
 5. Copy `CLAUDE.project.md.example` to `CLAUDE.md` and fill it in. Copy `CLAUDE.md.example` to `~/.claude/CLAUDE.md`, or merge it into yours.
 6. Copy each `.github/workflows/*.yml.example` to `*.yml`. Change the branch names in `on:` and `if:` if yours differ.
-7. Add the secrets in GitHub (Settings > Secrets and variables > Actions): `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`, and `RELEASE_PR_TOKEN`.
+7. Add the secrets in GitHub (Settings > Secrets and variables > Actions): `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`, and `RELEASE_PR_TOKEN`. Install the Claude GitHub App on the repo (`/install-github-app` in Claude Code). The review and autofix jobs use its token, so the autofix push starts CI.
 8. Create the labels `claude-review-blocking` and `no-auto-merge`.
 9. Add `/.claude/worktrees/` to `.gitignore`, and to your linter's and type checker's ignores. Claude Code puts worktrees there. Without the ignore, the main checkout's hooks check every worktree file as new code.
 10. Run `bash scripts/workflow/guard.test.sh`. Every line must start with `ok`.

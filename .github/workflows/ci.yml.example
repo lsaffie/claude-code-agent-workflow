@@ -272,6 +272,10 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
+          # Do not save GITHUB_TOKEN for git. The Claude action then pushes with its
+          # GitHub App token, and that push starts CI on the fix. A push made with
+          # GITHUB_TOKEN starts no run, or a run that waits for approval.
+          persist-credentials: false
 
       - uses: actions/setup-node@v5
         if: steps.attempts.outputs.skip != 'true'

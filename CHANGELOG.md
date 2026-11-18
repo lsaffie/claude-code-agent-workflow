@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- CI autofix: the checkout no longer saves `GITHUB_TOKEN` for git. The fix push uses the Claude GitHub App token, so CI runs on it without an approval.
+
 ## v0.1.0 (2026-11-17)
 
 First version.
