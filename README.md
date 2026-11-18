@@ -33,8 +33,9 @@ Hooks and scripts need `bash` (3.2 or later), `git`, `jq`, `curl` and `gh`.
 6. Copy each `.github/workflows/*.yml.example` to `*.yml`. Change the branch names in `on:` and `if:` if yours differ.
 7. Add the secrets in GitHub (Settings > Secrets and variables > Actions): `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`, and `RELEASE_PR_TOKEN`.
 8. Create the labels `claude-review-blocking` and `no-auto-merge`.
-9. Run `bash scripts/workflow/guard.test.sh`. Every line must start with `ok`.
-10. Open a test PR into `staging`. When CI and the review behave as you expect, set the repository variable `AUTO_MERGE_ENABLED` to `true`.
+9. Add `/.claude/worktrees/` to `.gitignore`, and to your linter's and type checker's ignores. Claude Code puts worktrees there. Without the ignore, the main checkout's hooks check every worktree file as new code.
+10. Run `bash scripts/workflow/guard.test.sh`. Every line must start with `ok`.
+11. Open a test PR into `staging`. When CI and the review behave as you expect, set the repository variable `AUTO_MERGE_ENABLED` to `true`.
 
 In your user settings (`~/.claude/settings.json`), set `permissions.defaultMode` to `auto` and `sandbox.network.strictAllowlist` to `true`. Project settings cannot set them.
 

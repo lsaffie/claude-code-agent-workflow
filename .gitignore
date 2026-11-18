@@ -2,3 +2,6 @@
 .claude/workflow.json
 .claude/settings.json
 .claude/settings.local.json
+
+# Claude Code worktrees: full copies of the repo. Ignore them in your linter too.
+/.claude/worktrees/

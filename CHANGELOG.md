@@ -9,4 +9,5 @@ First version.
 - Guard tests: `scripts/workflow/guard.test.sh`. Adapter keys `guard.allowEnvCommands` and `guard.testCases` for repo-specific exceptions and their tests.
 - GitHub Actions examples: CI with a second AI review, autofix (3 attempts) and optional auto-merge; release PR; release tag; smoke test.
 - PR template and change explainer template.
+- Quick start: ignore `.claude/worktrees/` in git, the linter and the type checker.
 - README with a 25-point audit checklist, and `docs/flow.md`.
