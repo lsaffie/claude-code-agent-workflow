@@ -10,7 +10,8 @@
 #   - merge while on the production branch, gh pr merge, merge calls to the GitHub API
 #   - gh api DELETE, and writes to branch protection or rulesets
 #   - rm -r outside the repo, of the repo itself, of .git, or of a path the hook cannot read
-#   - commands that name .env files (not .env.example) or credential folders; printenv; bare env
+#   - commands that name .env files (not .env.example, not guard.allowEnvCommands) or
+#     credential folders; printenv; bare env
 #   - host deploy CLIs (deploy.blockedCommands) and the deploy command (deploy.<env>.command)
 #
 # Exit 2 blocks the call and sends the reason to Claude. Exit 0 lets the deny rules decide.
@@ -246,7 +247,13 @@ no_heredoc=$(printf '%s\n' "$cmd" | awk '
   }')
 
 # Secrets: any mention of a .env file or a credential folder, quoted or not.
-env_files=$(printf '%s\n' "$no_heredoc" |
+# guard.allowEnvCommands in the adapter lists regexes for whole words that may name a
+# .env file, for example a loader variable that passes the file to a script unread.
+env_words=$(printf '%s\n' "$no_heredoc" | tr -s ' \t' '\n\n')
+while IFS= read -r re; do
+  [ -n "$re" ] && env_words=$(printf '%s\n' "$env_words" | grep -vE "$re")
+done < <(jq -r '.guard.allowEnvCommands // [] | .[]' .claude/workflow.json 2>/dev/null)
+env_files=$(printf '%s\n' "$env_words" |
   grep -oE '(^|[^A-Za-z0-9_.-])\.env(\.[A-Za-z0-9_-]+)*([^A-Za-z0-9_.-]|$)' |
   sed -E 's/^[^.]//; s/[^A-Za-z0-9_.-]$//' | grep -vxE '\.env\.example' || true)
 [ -z "$env_files" ] || block "It names a .env file. Secret values stay with the owner. Use .env.example for names."

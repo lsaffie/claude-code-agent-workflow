@@ -126,6 +126,8 @@ EOF"
 if jq -e '.deploy.blockedCommands | length > 0' "$cfg" >/dev/null 2>&1; then
   cases+=("2|$blk deploy --prod" "2|npx $blk --prod" "2|npx $blk@latest deploy")
 fi
+# Repo cases from the adapter, guard.testCases ("want|command"), for example for guard.allowEnvCommands.
+while IFS= read -r c; do [ -n "$c" ] && cases+=("$c"); done < <(jq -r '.guard.testCases // [] | .[]' "$cfg")
 # Deploy command cases only when the adapter sets one.
 dep=$(jq -r '.deploy.production.command // .deploy.staging.command // empty' "$cfg")
 [ -n "$dep" ] && cases+=("2|$dep")

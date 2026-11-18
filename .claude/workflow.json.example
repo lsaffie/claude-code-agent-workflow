@@ -57,6 +57,10 @@
     "description": "The owner rolls back to the last good release on the host, then opens a revert PR into the integration branch.",
     "guide": "docs/release.md"
   },
+  "guard": {
+    "allowEnvCommands": [],
+    "testCases": []
+  },
   "paths": {
     "explainers": "docs/changes",
     "explainerTemplate": "docs/changes/TEMPLATE.md",
