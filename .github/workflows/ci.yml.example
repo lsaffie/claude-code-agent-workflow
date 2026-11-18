@@ -161,6 +161,8 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # The autofix push comes from claude[bot]. Let that bot start the review and autofix.
+          allowed_bots: claude
           claude_args: >-
             --max-turns 30
             --allowedTools "Read,Glob,Grep,Bash(gh pr view *),Bash(gh pr diff *),Bash(gh issue view *),Bash(gh pr comment *),Bash(gh pr edit *),Bash(git diff *),Bash(git log *)"
@@ -291,6 +293,8 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # The autofix push comes from claude[bot]. Let that bot start the review and autofix.
+          allowed_bots: claude
           claude_args: >-
             --max-turns 60
             --allowedTools "Read,Glob,Grep,Edit,Write,Bash(npm *),Bash(npx *),Bash(node *),Bash(bash scripts/workflow/*),Bash(git status *),Bash(git diff *),Bash(git log *),Bash(git add *),Bash(git commit *),Bash(git push origin HEAD:${{ github.event.pull_request.head.ref }}),Bash(gh pr view *),Bash(gh issue view *),Bash(gh pr comment *)"

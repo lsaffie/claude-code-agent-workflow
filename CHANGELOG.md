@@ -3,6 +3,7 @@
 ## Unreleased
 
 - CI autofix: the checkout no longer saves `GITHUB_TOKEN` for git. The fix push uses the Claude GitHub App token, so CI runs on it without an approval.
+- CI review and autofix: `allowed_bots: claude`. Without it the Claude action refuses the run that the autofix push starts.
 
 ## v0.1.0 (2026-11-17)
 
