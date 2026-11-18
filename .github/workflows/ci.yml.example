@@ -190,12 +190,25 @@ jobs:
                `gh pr edit ${{ github.event.pull_request.number }} --add-label claude-review-blocking`.
                If you found none, run
                `gh pr edit ${{ github.event.pull_request.number }} --remove-label claude-review-blocking`.
+      # A review that did not run also fails this step on a PR into staging. The Claude action
+      # skips when this file differs from the default branch, so a PR that changes CI, and every
+      # staging PR until the next release, fails here instead of passing unreviewed.
+      # On a PR into main it only warns: the owner reviews the release PR.
       - name: Fail when the review found gaps
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
+          marker="<!-- claude-review sha=$HEAD_SHA -->"
+          reviewed=$(gh api "repos/$REPO/issues/$PR/comments" --paginate --jq '.[].body' | grep -cF "$marker" || true)
+          if [ "$reviewed" -eq 0 ]; then
+            msg="Claude review did not run for $HEAD_SHA. The action skips when .github/workflows differs from the default branch. Release to the default branch, then re-run this job."
+            [ "$BASE" = staging ] && { echo "::error::$msg"; exit 1; }
+            echo "::warning::$msg"
+          fi
           labels=$(gh pr view "$PR" --repo "$REPO" --json labels --jq '[.labels[].name] | join(",")')
           case ",$labels," in
             *,claude-review-blocking,*) echo "::error::Claude review found gaps. See the PR comment."; exit 1 ;;

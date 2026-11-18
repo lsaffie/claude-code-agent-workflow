@@ -35,7 +35,7 @@ Hooks and scripts need `bash` (3.2 or later), `git`, `jq`, `curl` and `gh`.
 8. Create the labels `claude-review-blocking` and `no-auto-merge`.
 9. Add `/.claude/worktrees/` to `.gitignore`, and to your linter's and type checker's ignores. Claude Code puts worktrees there. Without the ignore, the main checkout's hooks check every worktree file as new code.
 10. Run `bash scripts/workflow/guard.test.sh`. Every line must start with `ok`.
-11. Open a test PR into `staging`. When CI and the review behave as you expect, set the repository variable `AUTO_MERGE_ENABLED` to `true`.
+11. Put the workflow files on the default branch first. The Claude action skips on a PR whose workflow differs from the default branch, and the review gate then fails that PR. The same holds after every CI change: release it before you trust a review. Then open a test PR into `staging`. When CI and the review behave as you expect, set the repository variable `AUTO_MERGE_ENABLED` to `true`.
 
 In your user settings (`~/.claude/settings.json`), set `permissions.defaultMode` to `auto` and `sandbox.network.strictAllowlist` to `true`. Project settings cannot set them.
 
